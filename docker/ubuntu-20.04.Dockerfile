@@ -102,12 +102,21 @@ RUN pip3 install jupyter jupyterlab
 # Workaround to remove numpy installed with tensorflow
 RUN pip3 install --upgrade numpy
 
-# Install Cmake
-RUN cd /tmp && \
-    wget https://github.com/Kitware/CMake/releases/download/v3.14.4/cmake-3.14.4-Linux-x86_64.sh && \
-    chmod +x cmake-3.14.4-Linux-x86_64.sh && \
-    ./cmake-3.14.4-Linux-x86_64.sh --prefix=/usr/local --exclude-subdir --skip-license && \
-    rm ./cmake-3.14.4-Linux-x86_64.sh
+# # Install Cmake
+# RUN cd /tmp && \
+#     wget https://github.com/Kitware/CMake/releases/download/v3.14.4/cmake-3.14.4-Linux-x86_64.sh && \
+#     chmod +x cmake-3.14.4-Linux-x86_64.sh && \
+#     ./cmake-3.14.4-Linux-x86_64.sh --prefix=/usr/local --exclude-subdir --skip-license && \
+#     rm ./cmake-3.14.4-Linux-x86_64.sh
+
+ARG CMAKE_VERSION=3.24.4
+RUN wget -O /tmp/cmake.sh \
+      https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh \
+    && mkdir /opt/cmake \
+    && sh /tmp/cmake.sh --skip-license --prefix=/opt/cmake \
+    && rm /tmp/cmake.sh \
+    && ln -s /opt/cmake/bin/* /usr/local/bin/ \
+    && cmake --version
 
 # Download NGC client
 RUN cd /usr/local/bin && wget https://ngc.nvidia.com/downloads/ngccli_cat_linux.zip && unzip ngccli_cat_linux.zip && chmod u+x ngc-cli/ngc && rm ngccli_cat_linux.zip ngc-cli.md5 && echo "no-apikey\nascii\n" | ngc-cli/ngc config set
@@ -119,5 +128,41 @@ ENV PATH="${PATH}:/usr/local/bin/ngc-cli"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${TRT_OSSPATH}/build/out:${TRT_LIBPATH}"
 WORKDIR /workspace
 
+# Install OpenCV
+ARG OPENCV_VERSION=4.10.0   # or "4.x" for the branch
+ARG OPENCV_CONTRIB_VERSION=${OPENCV_VERSION}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake build-essential unzip wget  \
+        libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev \
+        libtbb2 libtbb-dev libjpeg-dev libpng-dev libtiff-dev \
+        libdc1394-22-dev libv4l-dev libopenblas-dev liblapack-dev \
+        libxvidcore-dev libx264-dev libfontconfig1-dev libgphoto2-dev \
+        libeigen3-dev libhdf5-dev && \
+    \
+    # download sources
+    wget -O opencv.zip        https://github.com/opencv/opencv/archive/${OPENCV_VERSION}.zip && \
+    wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/${OPENCV_CONTRIB_VERSION}.zip && \
+    unzip opencv.zip && unzip opencv_contrib.zip && \
+    \
+    # build
+    mkdir -p opencv-${OPENCV_VERSION}/build && cd opencv-${OPENCV_VERSION}/build && \
+    cmake \
+      -D CMAKE_BUILD_TYPE=RELEASE \
+      -D CMAKE_INSTALL_PREFIX=/usr/local \
+      -D BUILD_opencv_world=ON \
+      -D OPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-${OPENCV_CONTRIB_VERSION}/modules \
+      -D OPENCV_GENERATE_PKGCONFIG=ON \
+      -D OPENCV_PC_FILE_NAME=opencv.pc \
+      -D BUILD_EXAMPLES=OFF .. && \
+    make -j"$(nproc)" && make install && ldconfig && \
+    \
+    # cleanup
+    cd /workspace && \
+    rm -rf opencv-${OPENCV_VERSION} opencv_contrib-${OPENCV_CONTRIB_VERSION} opencv.zip opencv_contrib.zip
+
+
 USER trtuser
+
+RUN git clone https://github.com/hamdiboukamcha/RF-DETR-CPP-TENSORRT.git
+
 RUN ["/bin/bash"]
